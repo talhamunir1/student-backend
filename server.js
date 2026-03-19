@@ -1,188 +1,151 @@
-const cors = require('cors')
-require('dotenv').config()
 const express = require('express')
 const mongoose = require('mongoose')
+const cors = require('cors')
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 
-// ⭐ CONNECT DATABASE
+// ⭐ DB CONNECT
 mongoose.connect(process.env.MONGO_URL)
-.then(() => console.log("✅ MongoDB Connected"))
+.then(() => console.log("MongoDB Connected"))
 .catch(err => console.log(err))
 
-
-// ⭐ SCHEMA
+// ⭐ MODELS
 const studentSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true
-  }
+  name: String
 })
 
 const Student = mongoose.model("Student", studentSchema)
 
+const userSchema = new mongoose.Schema({
+  email: String,
+  password: String
+})
 
-// ⭐ SEED API → Insert 5 Students
+const User = mongoose.model("User", userSchema)
+
+// ⭐ AUTH MIDDLEWARE
+const auth = (req, res, next) => {
+
+  const token = req.headers.authorization
+
+  if (!token) {
+    return res.status(401).json({ message: "No token" })
+  }
+
+  try {
+    const decoded = jwt.verify(token, "secret123")
+    req.user = decoded
+    next()
+  } catch {
+    res.status(401).json({ message: "Invalid token" })
+  }
+}
+
+// ⭐ SIGNUP
+app.post('/signup', async (req, res) => {
+
+  const hashed = await bcrypt.hash(req.body.password, 10)
+
+  await User.create({
+    email: req.body.email,
+    password: hashed
+  })
+
+  res.json({ message: "User Created" })
+})
+
+// ⭐ LOGIN
+app.post('/login', async (req, res) => {
+
+  const user = await User.findOne({ email: req.body.email })
+
+  if (!user) return res.status(401).json({ message: "User not found" })
+
+  const match = await bcrypt.compare(req.body.password, user.password)
+
+  if (!match) return res.status(401).json({ message: "Wrong password" })
+
+  const token = jwt.sign({ userId: user._id }, "secret123", { expiresIn: "1h" })
+
+  res.json({ token })
+})
+
+// ⭐ SEED
 app.get('/seed', async (req, res) => {
 
-  try {
+  await Student.deleteMany()
 
-    await Student.deleteMany()
+  const students = await Student.insertMany([
+    { name: "Ali" },
+    { name: "Sara" },
+    { name: "Waqas" }
+  ])
 
-    const students = await Student.insertMany([
-      { name: "Ali" },
-      { name: "Sara" },
-      { name: "Waqas" },
-      { name: "Ahmed" },
-      { name: "Usman" }
-    ])
-
-    res.json({
-      message: "5 Students Inserted",
-      students
-    })
-
-  } catch (err) {
-    res.status(500).json({ message: "Seed Error" })
-  }
-
+  res.json(students)
 })
 
+// ⭐ CREATE STUDENT
+app.post('/students', auth, async (req, res) => {
 
-// ⭐ POST → Create Student
-app.post('/students', async (req, res) => {
+  const student = await Student.create({
+    name: req.body.name
+  })
 
-  try {
-
-    const student = new Student({
-      name: req.body.name
-    })
-
-    await student.save()
-
-    res.json({
-      message: "Student Saved",
-      student
-    })
-
-  } catch {
-    res.status(500).json({ message: "Error Saving Student" })
-  }
-
+  res.json(student)
 })
-
 
 // ⭐ GET ALL
-app.get('/students', async (req, res) => {
+app.get('/students', auth, async (req, res) => {
 
   const students = await Student.find()
 
   res.json(students)
-
 })
-
 
 // ⭐ GET BY ID
-app.get('/students/:id', async (req, res) => {
+app.get('/students/:id', auth, async (req, res) => {
 
-  try {
+  const student = await Student.findById(req.params.id)
 
-    const student = await Student.findById(req.params.id)
-
-    if (!student) {
-      return res.status(404).json({ message: "Student Not Found" })
-    }
-
-    res.json(student)
-
-  } catch {
-    res.status(400).json({ message: "Invalid ID" })
-  }
-
+  res.json(student)
 })
-
 
 // ⭐ DELETE
-app.delete('/students/:id', async (req, res) => {
+app.delete('/students/:id', auth, async (req, res) => {
 
-  try {
+  await Student.findByIdAndDelete(req.params.id)
 
-    const student = await Student.findByIdAndDelete(req.params.id)
-
-    if (!student) {
-      return res.status(404).json({ message: "Student Not Found" })
-    }
-
-    res.json({
-      message: "Student Deleted",
-      student
-    })
-
-  } catch {
-    res.status(400).json({ message: "Invalid ID" })
-  }
-
+  res.json({ message: "Deleted" })
 })
 
+// ⭐ UPDATE FULL
+app.put('/students/:id', auth, async (req, res) => {
 
-// ⭐ PUT → FULL UPDATE
-app.put('/students/:id', async (req, res) => {
+  const student = await Student.findByIdAndUpdate(
+    req.params.id,
+    { name: req.body.name },
+    { new: true }
+  )
 
-  try {
-
-    const updatedStudent = await Student.findByIdAndUpdate(
-      req.params.id,
-      { name: req.body.name },
-      { new: true }
-    )
-
-    if (!updatedStudent) {
-      return res.status(404).json({ message: "Student Not Found" })
-    }
-
-    res.json({
-      message: "Student Fully Updated",
-      student: updatedStudent
-    })
-
-  } catch {
-    res.status(400).json({ message: "Invalid ID" })
-  }
-
+  res.json(student)
 })
 
+// ⭐ PATCH
+app.patch('/students/:id', auth, async (req, res) => {
 
-// ⭐ PATCH → PARTIAL UPDATE
-app.patch('/students/:id', async (req, res) => {
+  const student = await Student.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true }
+  )
 
-  try {
-
-    const updatedStudent = await Student.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    )
-
-    if (!updatedStudent) {
-      return res.status(404).json({ message: "Student Not Found" })
-    }
-
-    res.json({
-      message: "Student Partially Updated",
-      student: updatedStudent
-    })
-
-  } catch {
-    res.status(400).json({ message: "Invalid ID" })
-  }
-
+  res.json(student)
 })
-
 
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT)
-})
+app.listen(PORT, () => console.log("Server running"))
