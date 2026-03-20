@@ -1,3 +1,4 @@
+require('dotenv').config()
 const express = require('express')
 const mongoose = require('mongoose')
 const cors = require('cors')
@@ -41,7 +42,7 @@ const auth = (req, res, next) => {
     : header
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret123")
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || process.env.JWT_SECRET)
     req.user = decoded
     next()
   } catch {
