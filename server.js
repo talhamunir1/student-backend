@@ -30,14 +30,18 @@ const User = mongoose.model("User", userSchema)
 // ⭐ AUTH MIDDLEWARE
 const auth = (req, res, next) => {
 
-  const token = req.headers.authorization
+  const header = req.headers.authorization
 
-  if (!token) {
+  if (!header) {
     return res.status(401).json({ message: "No token" })
   }
 
+  const token = header.startsWith("Bearer ")
+    ? header.split(" ")[1]
+    : header
+
   try {
-    const decoded = jwt.verify(token, "secret123")
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret123")
     req.user = decoded
     next()
   } catch {
